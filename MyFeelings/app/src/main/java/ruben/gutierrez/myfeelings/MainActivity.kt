@@ -14,6 +14,7 @@ import ruben.gutierrez.utilities.CustomBarDrawable
 import ruben.gutierrez.utilities.JSONFile
 import ruben.gutierrez.utilities.customCircleDrawable
 import ruben.gutierrez.utilities.emociones
+import kotlin.math.max
 
 class MainActivity : AppCompatActivity() {
 
@@ -32,6 +33,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var neutralButton: ImageButton
     private lateinit var sadButton: ImageButton
     private lateinit var verySadButton: ImageButton
+
     // Variables lógicas
     private var jsonFile: JSONFile? = null
     private var veryHappy = 0.0F
@@ -39,14 +41,17 @@ class MainActivity : AppCompatActivity() {
     private var neutral = 0.0F
     private var sad = 0.0F
     private var verysad = 0.0F
+
     private var data: Boolean = false
     private var lista = ArrayList<emociones>()
+
+    // Validación anti-spam (evita doble click muy rápido)
+    private var lastClickTime = 0L
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContentView(R.layout.activity_main)
-
 
         icon = findViewById(R.id.icon)
         graph = findViewById(R.id.graph)
@@ -63,7 +68,6 @@ class MainActivity : AppCompatActivity() {
         verySadButton = findViewById(R.id.verySadButton)
 
         jsonFile = JSONFile()
-
         fetchingData()
 
         if (!data) {
@@ -83,34 +87,65 @@ class MainActivity : AppCompatActivity() {
 
         guardarButton.setOnClickListener { guardar() }
 
-        veryHappyButton.setOnClickListener {
-            veryHappy++
-            iconoMayoria()
-            actualizarGrafica()
-        }
-
-        happyButton.setOnClickListener {
-            happy++
-            iconoMayoria()
-            actualizarGrafica()
-        }
-        neutralButton.setOnClickListener {
-            neutral++
-            iconoMayoria()
-            actualizarGrafica()
-        }
-        sadButton.setOnClickListener {
-            sad++
-            iconoMayoria()
-            actualizarGrafica()
-        }
-        verySadButton.setOnClickListener {
-            verysad++
-            iconoMayoria()
-            actualizarGrafica()
-        }
-
+        veryHappyButton.setOnClickListener { sumarEmocion(::sumarVeryHappy) }
+        happyButton.setOnClickListener { sumarEmocion(::sumarHappy) }
+        neutralButton.setOnClickListener { sumarEmocion(::sumarNeutral) }
+        sadButton.setOnClickListener { sumarEmocion(::sumarSad) }
+        verySadButton.setOnClickListener { sumarEmocion(::sumarVerySad) }
     }
+
+    // -------- VALIDACIONES PARA SUMAS --------
+
+    private fun sumarEmocion(accion: () -> Unit) {
+        if (System.currentTimeMillis() - lastClickTime < 250) return
+        lastClickTime = System.currentTimeMillis()
+
+        accion()
+        iconoMayoria()
+        actualizarGrafica()
+    }
+
+    private fun sumarVeryHappy() {
+        if (veryHappy >= 999) {
+            Toast.makeText(this, "Límite alcanzado", Toast.LENGTH_SHORT).show()
+            return
+        }
+        veryHappy++
+    }
+
+    private fun sumarHappy() {
+        if (happy >= 999) {
+            Toast.makeText(this, "Límite alcanzado", Toast.LENGTH_SHORT).show()
+            return
+        }
+        happy++
+    }
+
+    private fun sumarNeutral() {
+        if (neutral >= 999) {
+            Toast.makeText(this, "Límite alcanzado", Toast.LENGTH_SHORT).show()
+            return
+        }
+        neutral++
+    }
+
+    private fun sumarSad() {
+        if (sad >= 999) {
+            Toast.makeText(this, "Límite alcanzado", Toast.LENGTH_SHORT).show()
+            return
+        }
+        sad++
+    }
+
+    private fun sumarVerySad() {
+        if (verysad >= 999) {
+            Toast.makeText(this, "Límite alcanzado", Toast.LENGTH_SHORT).show()
+            return
+        }
+        verysad++
+    }
+
+    // ------------------------------------------
 
     private fun fetchingData() {
         try {
@@ -121,19 +156,22 @@ class MainActivity : AppCompatActivity() {
                 lista = parseJson(jsonArray)
 
                 for (i in lista) {
+                    val valor = max(0f, i.total) // VALIDACIÓN: evita negativos
+
                     when (i.nombre) {
-                        "Muy feliz" -> veryHappy = i.total
-                        "Feliz" -> happy = i.total
-                        "Neutral" -> neutral = i.total
-                        "Triste" -> sad = i.total
-                        "Muy triste" -> verysad = i.total
+                        "Muy feliz" -> veryHappy = valor
+                        "Feliz" -> happy = valor
+                        "Neutral" -> neutral = valor
+                        "Triste" -> sad = valor
+                        "Muy triste" -> verysad = valor
                     }
                 }
             } else {
                 data = false
             }
         } catch (e: JSONException) {
-            e.printStackTrace()
+            data = false
+            Toast.makeText(this, "Error en archivo: se reiniciarán los datos", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -156,21 +194,18 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun actualizarGrafica() {
-        val total = veryHappy + happy + neutral + verysad + sad
-        if (total == 0f) return
+        val total = veryHappy + happy + neutral + sad + verysad
+
+        if (total == 0f) {
+            Log.w("GRAPH", "No hay datos para graficar")
+            return
+        }
 
         val pVH = (veryHappy * 100 / total)
         val pH = (happy * 100 / total)
         val pN = (neutral * 100 / total)
         val pS = (sad * 100 / total)
         val pVS = (verysad * 100 / total)
-
-Log.d("porcentajes","very happy"+pVH)
-        Log.d("porcentajes","happy"+pH)
-        Log.d("porcentajes","neutral"+pN)
-        Log.d("porcentajes","sad"+pS)
-        Log.d("porcentajes","very sad"+pVS)
-
 
         lista.clear()
         lista.add(emociones("Muy feliz", pVH, R.color.mustard, veryHappy))
@@ -210,15 +245,23 @@ Log.d("porcentajes","very happy"+pVH)
     }
 
     private fun guardar() {
+        val total = veryHappy + happy + neutral + sad + verysad
+
+        if (total == 0f) {
+            Toast.makeText(this, "No has seleccionado ninguna emoción", Toast.LENGTH_SHORT).show()
+            return
+        }
+
         val jsonArray = JSONArray()
         for ((index, i) in lista.withIndex()) {
             val j = JSONObject()
             j.put("nombre", i.nombre)
             j.put("porcentaje", i.porcentaje)
             j.put("color", i.color)
-            j.put("total", i.total)
+            j.put("total", max(0f, i.total)) // Validación anti-negativos
             jsonArray.put(index, j)
         }
+
         jsonFile?.saveData(this, jsonArray.toString())
         Toast.makeText(this, "Datos guardados", Toast.LENGTH_SHORT).show()
     }
